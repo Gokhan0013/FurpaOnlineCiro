@@ -1,0 +1,8 @@
+bin/
+obj/
+publish/
+.vs/
+*.user
+appsettings.Local.json
+run.log
+run.err
