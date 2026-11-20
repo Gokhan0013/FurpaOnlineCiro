@@ -1204,10 +1204,10 @@ export class CashFx {
     const r = el.getBoundingClientRect();
     if (!r.width || r.bottom < 0 || r.top > innerHeight) return;
 
-    const power = Math.min(2.4, Math.max(0.75, Math.log10(Math.max(50, amount)) / 2.6)) * scale;
-    const nCoins = Math.min(18, Math.round(4 * power));
-    const nSyms = Math.min(8, Math.round(2.5 * power));
-    const nSparks = Math.min(24, Math.round(9 * power));
+    const power = Math.min(1.6, Math.max(0.65, Math.log10(Math.max(50, amount)) / 2.8)) * scale;
+    const nCoins = Math.min(4, Math.max(1, Math.round(1 * power)));
+    const nSyms = Math.min(2, Math.max(1, Math.round(0.6 * power)));
+    const nSparks = Math.min(5, Math.round(2 * power));
 
     const cx = r.left + Math.min(r.width * 0.52, 130);
     const cy = r.top + r.height * 0.45;
@@ -1263,7 +1263,7 @@ export class CashFx {
       });
     }
 
-    if (this.items.length > 260) this.items.splice(0, this.items.length - 260);
+    if (this.items.length > 60) this.items.splice(0, this.items.length - 60);
     if (!this.running) {
       this.running = true;
       this.lastT = performance.now();

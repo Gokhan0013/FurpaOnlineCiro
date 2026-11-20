@@ -6,7 +6,7 @@ using System.Xml.Linq;
 namespace FurpaOnline.Services;
 
 public sealed record MarketItemDto(string Key, string Name, string Symbol, double Buying, double Selling, double Change);
-public sealed record MarketQuoteDto(bool Ok, string? UpdatedAt, string Source, List<MarketItemDto> Items);
+public sealed record MarketQuoteDto(bool Ok, string? UpdatedAt, string Source, List<MarketItemDto> Items, long FetchedAtMs = 0, int TtlSec = 300);
 
 /// <summary>
 /// Döviz (USD, EUR) ve Altın (Gram, Çeyrek) canlı piyasa kurları.
@@ -16,7 +16,7 @@ public sealed record MarketQuoteDto(bool Ok, string? UpdatedAt, string Source, L
 public sealed partial class MarketService(ILogger<MarketService> log)
 {
     private static readonly HttpClient Http = CreateClient();
-    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(2);
     private static readonly string[] OrderedKeys = ["usd", "eur", "gram", "ceyrek"];
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<string, MarketItemDto> _lastItems = new(StringComparer.OrdinalIgnoreCase);
@@ -120,9 +120,16 @@ public sealed partial class MarketService(ILogger<MarketService> log)
             if (finalItems.Count > 0)
             {
                 var srcText = sources.Count > 0 ? string.Join(" + ", sources) : "Önbellek";
-                var dto = new MarketQuoteDto(true, updated ?? DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture), srcText, finalItems);
+                var nowUtc = DateTime.UtcNow;
+                var dto = new MarketQuoteDto(
+                    true,
+                    updated ?? DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture),
+                    srcText,
+                    finalItems,
+                    new DateTimeOffset(nowUtc).ToUnixTimeMilliseconds(),
+                    (int)CacheTtl.TotalSeconds);
                 _cachedJson = JsonSerializer.Serialize(dto, LiveState.Json);
-                _fetchedAt = DateTime.UtcNow;
+                _fetchedAt = nowUtc;
                 _hasGoodCache = true;
             }
 

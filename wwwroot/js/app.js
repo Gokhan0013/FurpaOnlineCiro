@@ -1,6 +1,6 @@
 // FURPA Online — canlı ciro ekranı
 import * as F from './fmt.js?v=7';
-import { CashFx, Network, Orb, PAY_COLORS, Rose, StackedBars, artCandles, artDots, artLines, artWave, confetti, hideTip, neonRegionColor, playCashChime, showTip, sparkline } from './charts.js?v=35';
+import { CashFx, Network, Orb, PAY_COLORS, Rose, StackedBars, artCandles, artDots, artLines, artWave, confetti, hideTip, neonRegionColor, playCashChime, showTip, sparkline } from './charts.js?v=37';
 import { renderReportView } from './report.js?v=8';
 import { renderBulkView } from './bulk.js?v=6';
 
@@ -335,8 +335,10 @@ function dripRevenue(targetCiro, targetFis) {
 
         if (chunk >= 1) {
           spawnCashPop('#cardCiro', '+' + F.money(chunk), chunk >= 2500);
-          cashFx.burst($('#kCiro'), chunk, isLast ? 1.15 : 0.85);
-          if (i % 2 === 0 || isLast) cashFx.burst($('#orbVal'), chunk, 0.65);
+          if (isLast) {
+            cashFx.burst($('#kCiro'), chunk, 0.75);
+            cashFx.burst($('#orbVal'), chunk, 0.45);
+          }
           flashEl($('#cardCiro'), 'kpi-bump');
           const ov = $('#orbVal');
           if (ov) { ov.classList.add('bump'); setTimeout(() => ov.classList.remove('bump'), 700); }
@@ -768,10 +770,14 @@ const MK_META = {
 };
 const MK_SHORT = { usd: 'USD', eur: 'EUR', gram: 'GRAM ALTIN', ceyrek: 'ÇEYREK ALTIN' };
 
-const MARKET_REFRESH_MS = 60 * 1000;
+const MARKET_REFRESH_MS = 30 * 1000;
 let lastMarketAt = 0;
+let marketFetching = false;
+let lastPieTriggerAt = 0;
 
 function fetchMarkets() {
+  if (marketFetching) return;
+  marketFetching = true;
   lastMarketAt = Date.now();
   fetch('api/markets?t=' + Date.now(), { cache: 'no-store' })
     .then(r => (r.ok ? r.json() : null))
@@ -780,14 +786,42 @@ function fetchMarkets() {
       const prev = markets;
       markets = m;
       renderMarkets(prev);
+      updateMarketPie();
     })
-    .catch(() => { });
+    .catch(() => { })
+    .finally(() => { marketFetching = false; });
 }
 fetchMarkets();
 setInterval(() => { if (!document.hidden) fetchMarkets(); }, MARKET_REFRESH_MS);
+setInterval(updateMarketPie, 1000);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && Date.now() - lastMarketAt >= MARKET_REFRESH_MS) fetchMarkets();
+  if (!document.hidden) updateMarketPie();
 });
+
+function updateMarketPie() {
+  if (window.innerWidth <= 960 || document.hidden || !markets?.ok) return;
+  const pies = document.querySelectorAll('#marketStrip .mk-pie');
+  if (!pies.length) return;
+  const ttlMs = Math.max(1000, (markets.ttlSec || 120) * 1000);
+  const baseAt = markets.fetchedAtMs || lastMarketAt || Date.now();
+  const nowRef = markets.fetchedAtMs ? (Date.now() + (skew || 0)) : Date.now();
+  const elapsed = Math.max(0, nowRef - baseAt);
+  const remMs = Math.max(0, ttlMs - elapsed);
+  const ratio = Math.max(0, Math.min(1, remMs / ttlMs));
+  const sec = Math.ceil(remMs / 1000);
+  const mm = String(Math.floor(sec / 60)).padStart(2, '0');
+  const ss = String(sec % 60).padStart(2, '0');
+  const tip = `Yenilemeye ${mm}:${ss}`;
+  pies.forEach(p => {
+    p.style.setProperty('--mk-p', ratio.toFixed(4));
+    p.title = tip;
+  });
+  if (remMs <= 0 && !marketFetching && Date.now() - lastPieTriggerAt > 4000) {
+    lastPieTriggerAt = Date.now();
+    fetchMarkets();
+  }
+}
 
 function renderMarkets(prev = null) {
   const box = $('#marketStrip');
@@ -803,7 +837,7 @@ function renderMarkets(prev = null) {
       return `<div class="card mk-card mk-${F.esc(it.key)}" data-mk="${F.esc(it.key)}">
         <div class="mk-ico">${F.esc(it.symbol)}</div>
         <div class="mk-body">
-          <div class="mk-top"><span class="mk-name">${F.esc(label)}</span><span class="mk-chg"></span></div>
+          <div class="mk-top"><span class="mk-name">${F.esc(label)}</span><span class="mk-top-r"><span class="mk-chg"></span><span class="mk-pie" title="Kur yenileme sayacı"></span></span></div>
           <div class="mk-mid"><strong class="mk-sell"></strong><small class="mk-buy"></small></div>
         </div>
       </div>`;
@@ -817,8 +851,9 @@ function renderMarkets(prev = null) {
     box.dataset.sig = sig;
   }
 
-  const prevMap = new Map((prev?.items || []).map(x => [x.key, x.selling]));
+  const prevMap = new Map((prev?.items || []).map(x => [x.key, x]));
   const tkParts = [];
+  const changedKeys = new Set();
   markets.items.forEach(it => {
     const card = box.querySelector(`[data-mk="${CSS.escape(it.key)}"]`);
     const fmt = it.key === 'ceyrek' ? F.money : F.money2;
@@ -826,6 +861,10 @@ function renderMarkets(prev = null) {
     const cTxt = Math.abs(c).toFixed(2).replace('.', ',');
     const chgCls = c > 0.001 ? 'up' : c < -0.001 ? 'down' : 'flat';
     const chgTxt = (c > 0.001 ? '▲ %' : c < -0.001 ? '▼ %' : '%') + cTxt;
+
+    const oldIt = prevMap.get(it.key);
+    const changed = Boolean(oldIt && (oldIt.selling !== it.selling || oldIt.buying !== it.buying || oldIt.change !== it.change));
+    if (changed) changedKeys.add(it.key);
 
     if (card) {
       F.countTo(card.querySelector('.mk-sell'), it.selling, fmt, 700);
@@ -836,13 +875,14 @@ function renderMarkets(prev = null) {
       chgEl.className = 'mk-chg ' + chgCls;
       chgEl.textContent = chgTxt;
 
-      const oldSell = prevMap.get(it.key);
-      if (oldSell != null && oldSell !== it.selling) flashEl(card, 'mk-flash');
+      card.classList.remove('mk-flash', 'mk-sync');
+      if (changed) flashEl(card, 'mk-flash');
+      else if (prev) flashEl(card, 'mk-sync');
     }
 
     const shortName = MK_SHORT[it.key] || it.name;
     const chgHtml = chgCls !== 'flat' ? `<span class="mk-chg ${chgCls}">${chgTxt}</span>` : '';
-    tkParts.push(`<span class="mk-tk-item mk-${F.esc(it.key)}"><i class="mk-tk-sym">${F.esc(it.symbol)}</i><b class="mk-tk-nm">${F.esc(shortName)}</b><strong class="mk-tk-val">${fmt(it.selling)}</strong><small class="mk-tk-buy">Alış ${fmt(it.buying)}</small>${chgHtml}</span>`);
+    tkParts.push(`<span class="mk-tk-item mk-${F.esc(it.key)}" data-mk-tk="${F.esc(it.key)}"><i class="mk-tk-sym">${F.esc(it.symbol)}</i><b class="mk-tk-nm">${F.esc(shortName)}</b><strong class="mk-tk-val">${fmt(it.selling)}</strong><small class="mk-tk-buy">Alış ${fmt(it.buying)}</small>${chgHtml}</span>`);
   });
 
   const track = $('#mkTickerTrack');
@@ -851,6 +891,17 @@ function renderMarkets(prev = null) {
     if (track.dataset.html !== tickerHtml) {
       track.innerHTML = tickerHtml + tickerHtml;
       track.dataset.html = tickerHtml;
+    }
+    if (prev) {
+      const tickerCard = track.closest('.mk-ticker');
+      if (tickerCard) {
+        tickerCard.classList.remove('mk-flash', 'mk-sync');
+        flashEl(tickerCard, changedKeys.size ? 'mk-flash' : 'mk-sync');
+      }
+      track.querySelectorAll('.mk-tk-item').forEach(el => {
+        el.classList.remove('mk-flash', 'mk-sync');
+        flashEl(el, changedKeys.has(el.dataset.mkTk) ? 'mk-flash' : 'mk-sync');
+      });
     }
   }
 }
