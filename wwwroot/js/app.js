@@ -768,7 +768,11 @@ const MK_META = {
 };
 const MK_SHORT = { usd: 'USD', eur: 'EUR', gram: 'GRAM ALTIN', ceyrek: 'ÇEYREK ALTIN' };
 
+const MARKET_REFRESH_MS = 60 * 1000;
+let lastMarketAt = 0;
+
 function fetchMarkets() {
+  lastMarketAt = Date.now();
   fetch('api/markets?t=' + Date.now(), { cache: 'no-store' })
     .then(r => (r.ok ? r.json() : null))
     .then(m => {
@@ -780,7 +784,10 @@ function fetchMarkets() {
     .catch(() => { });
 }
 fetchMarkets();
-setInterval(() => { if (!document.hidden) fetchMarkets(); }, 90000);
+setInterval(() => { if (!document.hidden) fetchMarkets(); }, MARKET_REFRESH_MS);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && Date.now() - lastMarketAt >= MARKET_REFRESH_MS) fetchMarkets();
+});
 
 function renderMarkets(prev = null) {
   const box = $('#marketStrip');
@@ -1508,6 +1515,7 @@ if (startTv) document.body.classList.add('tv');
 let appStarted = false;
 function startApp() {
   showSplash();
+  if (Date.now() - lastMarketAt >= MARKET_REFRESH_MS) fetchMarkets();
   go(startTv ? 'home' : location.hash.slice(1) || 'home');
   if (!appStarted) {
     appStarted = true;

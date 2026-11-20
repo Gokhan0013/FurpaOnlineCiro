@@ -16,6 +16,7 @@ public sealed record MarketQuoteDto(bool Ok, string? UpdatedAt, string Source, L
 public sealed partial class MarketService(ILogger<MarketService> log)
 {
     private static readonly HttpClient Http = CreateClient();
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
     private static readonly string[] OrderedKeys = ["usd", "eur", "gram", "ceyrek"];
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<string, MarketItemDto> _lastItems = new(StringComparer.OrdinalIgnoreCase);
@@ -35,13 +36,13 @@ public sealed partial class MarketService(ILogger<MarketService> log)
 
     public async Task<string> GetJsonAsync(CancellationToken ct)
     {
-        if (_hasGoodCache && DateTime.UtcNow - _fetchedAt < TimeSpan.FromMinutes(2))
+        if (_hasGoodCache && DateTime.UtcNow - _fetchedAt < CacheTtl)
             return _cachedJson;
 
         await _gate.WaitAsync(ct);
         try
         {
-            if (_hasGoodCache && DateTime.UtcNow - _fetchedAt < TimeSpan.FromMinutes(2))
+            if (_hasGoodCache && DateTime.UtcNow - _fetchedAt < CacheTtl)
                 return _cachedJson;
 
             var byKey = new Dictionary<string, MarketItemDto>(StringComparer.OrdinalIgnoreCase);
